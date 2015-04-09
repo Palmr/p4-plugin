@@ -349,6 +349,8 @@ public class ClientHelper extends ConnectionHelper {
 					validateFileSpecs(syncMsg, "file(s) up-to-date.",
 							"file does not exist");
 				}
+			} else {
+				log(spec.getOriginalPathString());
 			}
 		}
 		log("... duration: " + timer.toString());
@@ -567,12 +569,14 @@ public class ClientHelper extends ConnectionHelper {
 					printFile(rev);
 					log("... print " + rev);
 				}
+			} else {
+				log(spec.getDepotPathString());
 			}
 		}
 
 		// Remove opened files from have list.
 		RevertFilesOptions rOpts = new RevertFilesOptions();
-		rOpts.setNoUpdate(true);
+		rOpts.setNoClientRefresh(true);
 		log("... revert -k " + path);
 		List<IFileSpec> rvtMsg = iclient.revertFiles(files, rOpts);
 		validateFileSpecs(rvtMsg, "file(s) not opened on this client");
