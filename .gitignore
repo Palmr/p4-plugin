@@ -21,3 +21,6 @@ target/
 work/
 
 *.prefs
+
+*.iml
+.idea/
