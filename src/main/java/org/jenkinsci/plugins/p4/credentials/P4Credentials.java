@@ -1,6 +1,6 @@
 package org.jenkinsci.plugins.p4.credentials;
 
-import hudson.model.Hudson;
+import jenkins.model.Jenkins;
 
 import org.kohsuke.stapler.export.ExportedBean;
 
@@ -19,10 +19,10 @@ public class P4Credentials implements Credentials {
 	@CheckForNull
 	private final CredentialsScope scope;
 
-    protected P4Credentials() {
-        this.scope = null;
-    }
-    
+	protected P4Credentials() {
+		this.scope = null;
+	}
+
 	/**
 	 * Create instance with specified scope.
 	 * 
@@ -39,8 +39,8 @@ public class P4Credentials implements Credentials {
 
 	@NonNull
 	public CredentialsDescriptor getDescriptor() {
-		return (CredentialsDescriptor) Hudson.getInstance().getDescriptorOrDie(
-				getClass());
+		return (CredentialsDescriptor) Jenkins.getInstance()
+				.getDescriptorOrDie(getClass());
 	}
 
 }

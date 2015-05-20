@@ -11,20 +11,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
 
-import jenkins.security.Roles;
-
 import org.jenkinsci.plugins.p4.changes.P4ChangeEntry;
 import org.jenkinsci.plugins.p4.client.ClientHelper;
 import org.jenkinsci.plugins.p4.populate.Populate;
 import org.jenkinsci.plugins.p4.review.ReviewProp;
 import org.jenkinsci.plugins.p4.workspace.Workspace;
-import org.jenkinsci.remoting.RoleChecker;
-import org.jenkinsci.remoting.RoleSensitive;
 
 import com.perforce.p4java.impl.generic.core.Label;
 
 public class CheckoutTask extends AbstractTask implements
-		FileCallable<Boolean>, RoleSensitive, Serializable {
+		FileCallable<Boolean>, Serializable {
 
 	private static final long serialVersionUID = 1L;
 
@@ -45,11 +41,6 @@ public class CheckoutTask extends AbstractTask implements
 	 */
 	public CheckoutTask(Populate populate) {
 		this.populate = populate;
-	}
-
-	@Override
-	public void checkRoles(RoleChecker checker) throws SecurityException {
-		checker.check((RoleSensitive) this, Roles.SLAVE);
 	}
 
 	public void initialise() throws AbortException {
@@ -115,6 +106,7 @@ public class CheckoutTask extends AbstractTask implements
 			}
 		} catch (Exception e) {
 			String msg = "Unable to update workspace: " + e;
+			e.printStackTrace();
 			logger.warning(msg);
 			throw new AbortException(msg);
 		} finally {
@@ -242,9 +234,9 @@ public class CheckoutTask extends AbstractTask implements
 		return changes;
 	}
 
-	public List<Object> getChangesFull(Object last) {
+	public List<P4ChangeEntry> getChangesFull(Object last) {
 
-		List<Object> changesFull = new ArrayList<Object>();
+		List<P4ChangeEntry> changesFull = new ArrayList<P4ChangeEntry>();
 		List<Integer> changes = new ArrayList<Integer>();
 
 		// Add changes to this build.
@@ -257,6 +249,7 @@ public class CheckoutTask extends AbstractTask implements
 				changesFull.add(cl);
 			}
 
+			// add all changes to list
 			changes = p4.listChanges(last, buildChange);
 			for (Integer change : changes) {
 				P4ChangeEntry cl = new P4ChangeEntry();

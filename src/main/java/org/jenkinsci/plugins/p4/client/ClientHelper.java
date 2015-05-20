@@ -5,7 +5,9 @@ import hudson.model.TaskListener;
 
 import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -16,6 +18,7 @@ import java.util.logging.Logger;
 import org.apache.commons.io.FileUtils;
 import org.jenkinsci.plugins.p4.credentials.P4StandardCredentials;
 import org.jenkinsci.plugins.p4.populate.AutoCleanImpl;
+import org.jenkinsci.plugins.p4.populate.CheckOnlyImpl;
 import org.jenkinsci.plugins.p4.populate.ForceCleanImpl;
 import org.jenkinsci.plugins.p4.populate.Populate;
 import org.jenkinsci.plugins.p4.publish.Publish;
@@ -36,6 +39,7 @@ import com.perforce.p4java.core.file.FileSpecOpStatus;
 import com.perforce.p4java.core.file.IFileSpec;
 import com.perforce.p4java.impl.generic.client.ClientView;
 import com.perforce.p4java.impl.generic.core.Changelist;
+import com.perforce.p4java.impl.generic.core.file.FileSpec;
 import com.perforce.p4java.option.changelist.SubmitOptions;
 import com.perforce.p4java.option.client.ReconcileFilesOptions;
 import com.perforce.p4java.option.client.ReopenFilesOptions;
@@ -120,36 +124,12 @@ public class ClientHelper extends ConnectionHelper {
 	}
 
 	/**
-	 * Test to see if workspace is at the latest revision.
-	 * 
-	 * @throws Exception
-	 */
-	public boolean updateFiles() throws Exception {
-		// build file revision spec
-		List<IFileSpec> syncFiles;
-		String path = iclient.getRoot() + "/...";
-		syncFiles = FileSpecBuilder.makeFileSpecList(path);
-
-		// Sync revision to re-edit
-		SyncOptions syncOpts = new SyncOptions();
-		syncOpts.setNoUpdate(true);
-		List<IFileSpec> syncMsg = iclient.sync(syncFiles, syncOpts);
-
-		for (IFileSpec fileSpec : syncMsg) {
-			if (fileSpec.getOpStatus() != FileSpecOpStatus.VALID) {
-				String msg = fileSpec.getStatusMessage();
-				if (msg.contains("file(s) up-to-date.")) {
-					return false;
-				}
-			}
-		}
-		return true;
-	}
-
-	/**
 	 * Sync files to workspace at the specified change/label.
 	 * 
-	 * @param change
+	 * @param buildChange
+	 *            Change to sync from
+	 * @param populate
+	 *            Populate strategy
 	 * @throws Exception
 	 */
 	public void syncFiles(Object buildChange, Populate populate)
@@ -161,7 +141,7 @@ public class ClientHelper extends ConnectionHelper {
 			String label = (String) buildChange;
 			try {
 				int change = Integer.parseInt(label);
-				log("SCM Task: label is a number! syncing files at change: "
+				log("P4 Task: label is a number! syncing files at change: "
 						+ change);
 			} catch (NumberFormatException e) {
 				if (!isLabel(label) && !isClient(label)) {
@@ -170,23 +150,54 @@ public class ClientHelper extends ConnectionHelper {
 					logger.warning(msg);
 					throw new AbortException(msg);
 				} else {
-					log("SCM Task: syncing files at client/label: " + label);
+					log("P4 Task: syncing files at client/label: " + label);
 				}
 			}
 		} else {
-			log("SCM Task: syncing files at change: " + buildChange);
+			log("P4 Task: syncing files at change: " + buildChange);
 		}
 
 		// build file revision spec
 		List<IFileSpec> files;
 		String path = iclient.getRoot() + "/...";
 		String revisions = path + "@" + buildChange;
-		log("... sync " + revisions);
 
 		// Sync files
 		files = FileSpecBuilder.makeFileSpecList(revisions);
-		syncFiles(files, populate);
-		log("... duration: " + timer.toString());
+
+		if (populate instanceof CheckOnlyImpl) {
+			syncHaveList(files, populate);
+		} else {
+			syncFiles(files, populate);
+		}
+		log("duration: " + timer.toString() + "\n");
+	}
+
+	/**
+	 * Test to see if workspace is at the latest revision.
+	 * 
+	 * @throws Exception
+	 */
+	private boolean syncHaveList(List<IFileSpec> files, Populate populate)
+			throws Exception {
+		// Preview (sync -k)
+		SyncOptions syncOpts = new SyncOptions();
+		syncOpts.setClientBypass(true);
+		syncOpts.setQuiet(populate.isQuiet());
+
+		List<IFileSpec> syncMsg = iclient.sync(files, syncOpts);
+		validateFileSpecs(syncMsg, "file(s) up-to-date.",
+				"file does not exist", "no file(s) as of that date");
+
+		for (IFileSpec fileSpec : syncMsg) {
+			if (fileSpec.getOpStatus() != FileSpecOpStatus.VALID) {
+				String msg = fileSpec.getStatusMessage();
+				if (msg.contains("file(s) up-to-date.")) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private void syncFiles(List<IFileSpec> files, Populate populate)
@@ -199,8 +210,6 @@ public class ClientHelper extends ConnectionHelper {
 				options.setModtime(true);
 				iclient.setOptions(options);
 				iclient.update(); // Save client spec
-				// iclient.refresh();
-				// connection.setCurrentClient(iclient);
 			}
 		}
 
@@ -208,8 +217,7 @@ public class ClientHelper extends ConnectionHelper {
 		SyncOptions syncOpts = new SyncOptions();
 		syncOpts.setServerBypass(!populate.isHave() && !populate.isForce());
 		syncOpts.setForceUpdate(populate.isForce());
-		log("... force update " + populate.isForce());
-		log("... bypass have " + !populate.isHave());
+		syncOpts.setQuiet(populate.isQuiet());
 
 		List<IFileSpec> syncMsg = iclient.sync(files, syncOpts);
 		validateFileSpecs(syncMsg, "file(s) up-to-date.",
@@ -223,58 +231,62 @@ public class ClientHelper extends ConnectionHelper {
 	 * @throws Exception
 	 */
 	public void tidyWorkspace(Populate populate) throws Exception {
-
-		log("SCM Task: cleanup workspace: " + iclient.getName());
-
 		// relies on workspace view for scope.
 		List<IFileSpec> files;
 		String path = iclient.getRoot() + "/...";
 		files = FileSpecBuilder.makeFileSpecList(path);
 
 		if (populate instanceof AutoCleanImpl) {
-			// remove all pending files within workspace
-			tidyPending(files);
-
-			// remove extra files within workspace
-			if (((AutoCleanImpl) populate).isDelete()) {
-				tidyDelete(files);
-			}
-
-			// replace any missing/modified files within workspace
-			if (((AutoCleanImpl) populate).isReplace()) {
-				tidyReplace(files, populate);
-			}
+			tidyAutoCleanImpl(populate, files);
 		}
 
 		if (populate instanceof ForceCleanImpl) {
-
-			// remove all pending files within workspace
-			tidyPending(files);
-
-			// remove all versioned files (clean have list)
-			syncFiles(0, populate);
-
-			// remove all files from workspace
-			String root = iclient.getRoot();
-			log("... rm -rf " + root);
-			FileUtils.forceDelete(new File(root));
+			tidyForceSyncImpl(populate, files);
 		}
+	}
+
+	private void tidyForceSyncImpl(Populate populate, List<IFileSpec> files)
+			throws Exception {
+		// remove all pending files within workspace
+		tidyPending(files);
+
+		// remove all versioned files (clean have list)
+		syncFiles(0, populate);
+
+		// remove all files from workspace
+		String root = iclient.getRoot();
+		log("... rm -rf " + root);
+		silentlyForceDelete(root);
+	}
+
+	private void silentlyForceDelete(String root) throws IOException {
+		try {
+			FileUtils.forceDelete(new File(root));
+		} catch (FileNotFoundException ignored) {
+
+		}
+	}
+
+	private void tidyAutoCleanImpl(Populate populate, List<IFileSpec> files)
+			throws Exception {
+		// remove all pending files within workspace
+		tidyPending(files);
+
+		// clean files within workspace
+		tidyRevisions(files, populate);
 	}
 
 	private void tidyPending(List<IFileSpec> files) throws Exception {
 		TimeTask timer = new TimeTask();
-		log("SCM Task: reverting all pending and shelved revisions.");
+		log("P4 Task: reverting all pending and shelved revisions.");
 
 		// revert all pending and shelved revisions
 		RevertFilesOptions rOpts = new RevertFilesOptions();
-		log("... [list] = revert");
-
 		List<IFileSpec> list = iclient.revertFiles(files, rOpts);
 		validateFileSpecs(list, "not opened on this client");
-		log("... size[list] = " + list.size());
 
 		// check for added files and remove...
-		log("... rm [list] | ABANDONED");
+		log("... rm [abandoned files]");
 		for (IFileSpec file : list) {
 			if (file.getAction() == FileAction.ABANDONED) {
 				// first check if we have the local path
@@ -288,16 +300,19 @@ public class ClientHelper extends ConnectionHelper {
 				}
 			}
 		}
-		log("... duration: " + timer.toString());
+		log("duration: " + timer.toString() + "\n");
 	}
 
-	private void tidyReplace(List<IFileSpec> files, Populate populate)
+	private void tidyRevisions(List<IFileSpec> files, Populate populate)
 			throws Exception {
 		TimeTask timer = new TimeTask();
-		log("SCM Task: restoring all missing and changed revisions.");
+		log("P4 Task: cleaning workspace to match have list.");
 
-		// check status - find all missing or changed
-		String[] base = { "-n", "-e", "-d", "-f" };
+		boolean delete = ((AutoCleanImpl) populate).isDelete();
+		boolean replace = ((AutoCleanImpl) populate).isReplace();
+
+		// check status - find all missing, changed or added files
+		String[] base = { "-n", "-a", "-e", "-d", "-l", "-f" };
 		List<String> list = new ArrayList<String>();
 		list.addAll(Arrays.asList(base));
 
@@ -313,84 +328,58 @@ public class ClientHelper extends ConnectionHelper {
 		String[] args = list.toArray(new String[list.size()]);
 		ReconcileFilesOptions statusOpts = new ReconcileFilesOptions(args);
 
-		log("... [list] = reconcile " + list.toString());
-		List<IFileSpec> update = iclient.reconcileFiles(files, statusOpts);
-		validateFileSpecs(update, "also opened by", "no file(s) to reconcile",
+		List<IFileSpec> status = iclient.reconcileFiles(files, statusOpts);
+		validateFileSpecs(status, "also opened by", "no file(s) to reconcile",
 				"must sync/resolve", "exclusive file already opened",
-				"cannot submit from stream");
+				"cannot submit from stream", "instead of",
+				"empty, assuming text");
 
-		log("... size[list] = " + update.size());
+		// Add missing, modified or locked files to a list, and delete the
+		// unversioned files.
+		List<IFileSpec> update = new ArrayList<IFileSpec>();
+		for (IFileSpec s : status) {
+			if (s.getOpStatus() == FileSpecOpStatus.VALID) {
+				String path = s.getLocalPathString();
+				if (path == null) {
+					path = depotToLocal(s);
+				}
+				switch (s.getAction()) {
+				case ADD:
+					if (path != null && delete) {
+						File unlink = new File(path);
+						unlink.delete();
+					}
+					break;
+				default:
+					update.add(s);
+					break;
+				}
+			} else {
+				String msg = s.getStatusMessage();
+				if (msg.contains("exclusive file already opened")) {
+					String rev = msg.substring(0, msg.indexOf(" - can't "));
+					IFileSpec spec = new FileSpec(rev);
+					update.add(spec);
+				}
+			}
+		}
 
-		// force sync to update files only if "no file(s) to reconcile" is not
-		// present.
-		if (validateFileSpecs(update, true, "also opened by",
-				"must sync/resolve", "exclusive file already opened",
-				"cannot submit from stream")) {
+		// Force sync missing and modified files
+		if (!update.isEmpty() && replace) {
 			SyncOptions syncOpts = new SyncOptions();
 			syncOpts.setForceUpdate(true);
-			log("... sync -f [list]");
+			syncOpts.setQuiet(populate.isQuiet());
+			
 			List<IFileSpec> syncMsg = iclient.sync(update, syncOpts);
 			validateFileSpecs(syncMsg, "file(s) up-to-date.",
 					"file does not exist");
 		}
-
-		// force sync any files missed due to INFO messages e.g. exclusive files
-		for (IFileSpec spec : update) {
-			if (spec.getOpStatus() != FileSpecOpStatus.VALID) {
-				String msg = spec.getStatusMessage();
-				if (msg.contains("exclusive file already opened")) {
-					String rev = msg.substring(0, msg.indexOf(" - can't "));
-					List<IFileSpec> f = FileSpecBuilder.makeFileSpecList(rev);
-
-					SyncOptions syncOpts = new SyncOptions();
-					syncOpts.setForceUpdate(true);
-					log("... sync -f " + rev);
-					List<IFileSpec> syncMsg = iclient.sync(f, syncOpts);
-					validateFileSpecs(syncMsg, "file(s) up-to-date.",
-							"file does not exist");
-				}
-			} else {
-				log(spec.getOriginalPathString());
-			}
-		}
-		log("... duration: " + timer.toString());
-	}
-
-	private void tidyDelete(List<IFileSpec> files) throws Exception {
-		TimeTask timer = new TimeTask();
-		log("SCM Task: removing all non-versioned files.");
-
-		// check status - find all extra files
-		ReconcileFilesOptions statusOpts = new ReconcileFilesOptions();
-		statusOpts.setOutsideAdd(true);
-		statusOpts.setNoUpdate(true);
-		statusOpts.setUseWildcards(true);
-		statusOpts.setLocalSyntax(true);
-		log("... [list] = reconcile -n -a -l");
-		List<IFileSpec> extra = iclient.reconcileFiles(files, statusOpts);
-		validateFileSpecs(extra, "- no file(s) to reconcile", "instead of",
-				"empty, assuming text");
-
-		log("... size[list] = " + extra.size());
-
-		// remove added files
-		log("... rm [list]");
-		for (IFileSpec e : extra) {
-			String path = e.getLocalPathString();
-			if (path == null) {
-				path = depotToLocal(e);
-			}
-			if (path != null) {
-				File unlink = new File(path);
-				unlink.delete();
-			}
-		}
-		log("... duration: " + timer.toString());
+		log("duration: " + timer.toString() + "\n");
 	}
 
 	public boolean buildChange() throws Exception {
 		TimeTask timer = new TimeTask();
-		log("SCM Task: reconcile files to changelist.");
+		log("P4 Task: reconcile files to changelist.");
 
 		// build file revision spec
 		String ws = "//" + iclient.getName() + "/...";
@@ -399,21 +388,18 @@ public class ClientHelper extends ConnectionHelper {
 		// cleanup pending changes (revert -k)
 		RevertFilesOptions revertOpts = new RevertFilesOptions();
 		revertOpts.setNoClientRefresh(true);
-		log("... revert -k");
 		List<IFileSpec> revertStat = iclient.revertFiles(files, revertOpts);
 		validateFileSpecs(revertStat, "");
 
 		// flush client to populate have (sync -k)
 		SyncOptions syncOpts = new SyncOptions();
 		syncOpts.setClientBypass(true);
-		log("... sync -k");
 		List<IFileSpec> syncStat = iclient.sync(files, syncOpts);
 		validateFileSpecs(syncStat, "file(s) up-to-date.");
 
 		// check status - find all changes to files
 		ReconcileFilesOptions statusOpts = new ReconcileFilesOptions();
 		statusOpts.setUseWildcards(true);
-		log("... [list] = reconcile");
 		List<IFileSpec> status = iclient.reconcileFiles(files, statusOpts);
 		validateFileSpecs(status, "- no file(s) to reconcile", "instead of",
 				"empty, assuming text", "also opened by");
@@ -421,13 +407,13 @@ public class ClientHelper extends ConnectionHelper {
 		// Check if file is open
 		boolean open = isOpened(files);
 
-		log("... duration: " + timer.toString());
+		log("duration: " + timer.toString() + "\n");
 		return open;
 	}
 
 	public void publishChange(Publish publish) throws Exception {
 		TimeTask timer = new TimeTask();
-		log("SCM Task: publish files to Perforce.");
+		log("P4 Task: publish files to Perforce.");
 
 		// build file revision spec
 		String ws = "//" + iclient.getName() + "/...";
@@ -458,15 +444,24 @@ public class ClientHelper extends ConnectionHelper {
 			SubmitImpl submit = (SubmitImpl) publish;
 			SubmitOptions submitOpts = new SubmitOptions();
 			submitOpts.setReOpen(submit.isReopen());
-			change.submit(submitOpts);
+
 			log("... submitting files");
+			List<IFileSpec> submitted = change.submit(submitOpts);
+			validateFileSpecs(submitted, "Submitted as change");
+
+			long cngNumber = findSubmittedChange(submitted);
+			if (cngNumber > 0) {
+				log("... submitted in change: " + cngNumber);
+			}
 		}
 
 		// if SHELVE
 		if (publish instanceof ShelveImpl) {
 			ShelveImpl shelve = (ShelveImpl) publish;
+
 			log("... shelving files");
-			iclient.shelveChangelist(change);
+			List<IFileSpec> shelved = iclient.shelveChangelist(change);
+			validateFileSpecs(shelved, "");
 
 			// post shelf cleanup
 			RevertFilesOptions revertOpts = new RevertFilesOptions();
@@ -476,7 +471,26 @@ public class ClientHelper extends ConnectionHelper {
 			log("... reverting open files " + r);
 			iclient.revertFiles(files, revertOpts);
 		}
-		log("... duration: " + timer.toString());
+		log("duration: " + timer.toString() + "\n");
+	}
+
+	private long findSubmittedChange(List<IFileSpec> submitted) {
+		long change = 0;
+		for (IFileSpec spec : submitted) {
+			if (spec.getOpStatus() != FileSpecOpStatus.VALID) {
+				String msg = spec.getStatusMessage();
+				String cng = "Submitted as change ";
+				if (msg.startsWith(cng)) {
+					try {
+						String id = msg.substring(cng.length());
+						change = Long.parseLong(id);
+					} catch (NumberFormatException e) {
+						change = -1;
+					}
+				}
+			}
+		}
+		return change;
 	}
 
 	private boolean isOpened(List<IFileSpec> files) throws Exception {
@@ -546,7 +560,7 @@ public class ClientHelper extends ConnectionHelper {
 	 */
 	public void unshelveFiles(int review) throws Exception {
 		TimeTask timer = new TimeTask();
-		log("SCM Task: unshelve review: " + review);
+		log("P4 Task: unshelve review: " + review);
 
 		// build file revision spec
 		List<IFileSpec> files;
@@ -555,7 +569,6 @@ public class ClientHelper extends ConnectionHelper {
 
 		// Unshelve change for review
 		List<IFileSpec> shelveMsg;
-		log("... unshelve -f -s " + review);
 		shelveMsg = iclient.unshelveChangelist(review, null, 0, true, false);
 		validateFileSpecs(shelveMsg, "also opened by", "no such file(s)",
 				"exclusive file already opened");
@@ -567,7 +580,6 @@ public class ClientHelper extends ConnectionHelper {
 				if (msg.contains("exclusive file already opened")) {
 					String rev = msg.substring(0, msg.indexOf(" - can't "));
 					printFile(rev);
-					log("... print " + rev);
 				}
 			} else {
 				log(spec.getDepotPathString());
@@ -577,7 +589,6 @@ public class ClientHelper extends ConnectionHelper {
 		// Remove opened files from have list.
 		RevertFilesOptions rOpts = new RevertFilesOptions();
 		rOpts.setNoClientRefresh(true);
-		log("... revert -k " + path);
 		List<IFileSpec> rvtMsg = iclient.revertFiles(files, rOpts);
 		validateFileSpecs(rvtMsg, "file(s) not opened on this client");
 		log("... duration: " + timer.toString());
@@ -650,8 +661,7 @@ public class ClientHelper extends ConnectionHelper {
 
 	/**
 	 * Show all changes within the scope of the client.
-	 * 
-	 * @param from
+	 *
 	 * @return
 	 * @throws Exception
 	 */
@@ -662,10 +672,6 @@ public class ClientHelper extends ConnectionHelper {
 
 	private List<Integer> listChanges(String ws) throws Exception {
 		List<Integer> list = new ArrayList<Integer>();
-
-		String msg = "listing changes: " + ws;
-		log(msg);
-		logger.info(msg);
 
 		List<IFileSpec> spec = FileSpecBuilder.makeFileSpecList(ws);
 		GetChangelistsOptions opts = new GetChangelistsOptions();
@@ -695,7 +701,7 @@ public class ClientHelper extends ConnectionHelper {
 	 * Fetches a list of changes needed to update the workspace to the specified
 	 * limit. The limit could be a Perforce change number or label.
 	 * 
-	 * @param limit
+	 * @param changeLimit
 	 * @return
 	 * @throws Exception
 	 */

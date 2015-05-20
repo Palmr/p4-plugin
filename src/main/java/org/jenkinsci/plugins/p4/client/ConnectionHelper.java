@@ -9,12 +9,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import jenkins.model.Jenkins;
 
 import org.acegisecurity.Authentication;
+import org.jenkinsci.plugins.p4.console.P4Logging;
+import org.jenkinsci.plugins.p4.console.P4Progress;
 import org.jenkinsci.plugins.p4.credentials.P4StandardCredentials;
 
 import com.cloudbees.plugins.credentials.CredentialsProvider;
@@ -32,6 +35,8 @@ import com.perforce.p4java.impl.generic.core.file.FileSpec;
 import com.perforce.p4java.option.server.GetDepotFilesOptions;
 import com.perforce.p4java.server.CmdSpec;
 import com.perforce.p4java.server.IOptionsServer;
+import com.perforce.p4java.server.callback.ICommandCallback;
+import com.perforce.p4java.server.callback.IProgressCallback;
 
 public class ConnectionHelper {
 
@@ -42,34 +47,38 @@ public class ConnectionHelper {
 	protected final AuthorisationConfig authorisationConfig;
 	protected IOptionsServer connection;
 	protected final TaskListener listener;
+	protected final P4StandardCredentials p4credential;
 
 	public ConnectionHelper(String credentialID, TaskListener listener) {
 		this.listener = listener;
 		P4StandardCredentials credential = findCredential(credentialID);
+		this.p4credential = credential;
 		this.connectionConfig = new ConnectionConfig(credential);
 		this.authorisationConfig = new AuthorisationConfig(credential);
-		connect();
+		connectionRetry(3);
 	}
 
 	public ConnectionHelper(P4StandardCredentials credential,
 			TaskListener listener) {
 		this.listener = listener;
+		this.p4credential = credential;
 		this.connectionConfig = new ConnectionConfig(credential);
 		this.authorisationConfig = new AuthorisationConfig(credential);
-		connect();
+		connectionRetry(3);
 	}
 
 	public ConnectionHelper(P4StandardCredentials credential) {
 		this.listener = new LogTaskListener(logger, Level.INFO);
+		this.p4credential = credential;
 		this.connectionConfig = new ConnectionConfig(credential);
 		this.authorisationConfig = new AuthorisationConfig(credential);
-		connect();
+		connectionRetry(3);
 	}
 
 	/**
 	 * Convenience wrapper to connect and report errors
 	 */
-	private void connect() {
+	private boolean connect() {
 		// Connect to the Perforce server
 		try {
 			this.connection = ConnectionFactory.getConnection(connectionConfig);
@@ -78,7 +87,7 @@ public class ConnectionHelper {
 			String err = "P4: Unable to connect: " + e;
 			logger.severe(err);
 			log(err);
-			return;
+			return false;
 		}
 
 		// Login to Perforce
@@ -88,8 +97,50 @@ public class ConnectionHelper {
 			String err = "P4: Unable to login: " + e;
 			logger.severe(err);
 			log(err);
-			return;
+			return false;
 		}
+
+		// Register progress callback
+		IProgressCallback progress = new P4Progress(listener);
+		this.connection.registerProgressCallback(progress);
+
+		// Register logging callback
+		ICommandCallback logging = new P4Logging(listener);
+		this.connection.registerCallback(logging);
+
+		return true;
+	}
+
+	/**
+	 * Retry Connection with back off for each failed attempt.
+	 * 
+	 * @param attempt
+	 */
+	private void connectionRetry(int attempt) {
+		int trys = 0;
+		while (trys < attempt) {
+			if (connect()) {
+				return;
+			}
+			trys++;
+			String err = "P4: Connection retry: " + trys;
+			logger.severe(err);
+			log(err);
+
+			// back off n^2 seconds, before retry
+			try {
+				TimeUnit.SECONDS.sleep(trys ^ 2);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}
+		String err = "P4: Connection retry giving up...";
+		logger.severe(err);
+		log(err);
+	}
+
+	public String getPort() {
+		return p4credential.getP4port();
 	}
 
 	public String getTrust() throws Exception {
@@ -131,8 +182,7 @@ public class ConnectionHelper {
 
 		switch (authorisationConfig.getType()) {
 		case PASSWORD:
-			String status = connection.getLoginStatus();
-			if (!status.contains("not necessary")) {
+			if (!isLogin()) {
 				String pass = authorisationConfig.getPassword();
 				connection.login(pass);
 			}
@@ -153,7 +203,14 @@ public class ConnectionHelper {
 					+ authorisationConfig.getType());
 		}
 
-		return isLogin();
+		// return login status...
+		if (isLogin()) {
+			return true;
+		} else {
+			String status = connection.getLoginStatus();
+			logger.info("P4: login failed '" + status + "'");
+			return false;
+		}
 	}
 
 	public void logout() throws Exception {
@@ -174,8 +231,6 @@ public class ConnectionHelper {
 		if (status.isEmpty()) {
 			return true;
 		}
-
-		logger.info("P4: login failed '" + status + "'");
 		return false;
 	}
 
@@ -336,6 +391,9 @@ public class ConnectionHelper {
 		boolean success = true;
 		boolean abort = false;
 
+		ArrayList<String> ignoreList = new ArrayList<String>();
+		ignoreList.addAll(Arrays.asList(ignore));
+
 		for (IFileSpec fileSpec : fileSpecs) {
 			FileSpecOpStatus status = fileSpec.getOpStatus();
 			if (status != FileSpecOpStatus.VALID) {
@@ -343,12 +401,11 @@ public class ConnectionHelper {
 
 				// superfluous p4java message
 				boolean unknownMsg = true;
-				ArrayList<String> ignoreList = new ArrayList<String>();
-				ignoreList.addAll(Arrays.asList(ignore));
 				for (String istring : ignoreList) {
 					if (msg.contains(istring)) {
 						// its a known message
 						unknownMsg = false;
+						break;
 					}
 				}
 

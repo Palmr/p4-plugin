@@ -138,7 +138,7 @@ public class ConnectionTest {
 		FreeStyleProject project = jenkins
 				.createFreeStyleProject("Static-Head");
 		Workspace workspace = new StaticWorkspaceImpl("none", false, "test.ws");
-		Populate populate = new AutoCleanImpl(true, true, false, null);
+		Populate populate = new AutoCleanImpl(true, true, false, false, null);
 		PerforceScm scm = new PerforceScm(credential, workspace, populate);
 		project.setScm(scm);
 		project.save();
@@ -165,7 +165,7 @@ public class ConnectionTest {
 		FreeStyleProject project = jenkins
 				.createFreeStyleProject("Static-Head");
 		Workspace workspace = new StaticWorkspaceImpl("none", false, "test.ws");
-		Populate populate = new AutoCleanImpl(true, true, false, null);
+		Populate populate = new AutoCleanImpl(true, true, false, false, null);
 		PerforceScm scm = new PerforceScm(credential, workspace, populate);
 		project.setScm(scm);
 		project.save();
@@ -176,7 +176,7 @@ public class ConnectionTest {
 		assertEquals(Result.SUCCESS, build.getResult());
 
 		List<String> log = build.getLog(LOG_LIMIT);
-		assertTrue(log.contains("SCM Task: syncing files at change: 40"));
+		assertTrue(log.contains("P4 Task: syncing files at change: 40"));
 
 		CredentialsDescriptor desc = auth.getDescriptor();
 		assertNotNull(desc);
@@ -206,7 +206,7 @@ public class ConnectionTest {
 				.createFreeStyleProject("Manual-Head");
 		ManualWorkspaceImpl workspace = new ManualWorkspaceImpl("none", true,
 				client, spec);
-		Populate populate = new AutoCleanImpl(true, true, false, null);
+		Populate populate = new AutoCleanImpl(true, true, false, false, null);
 		PerforceScm scm = new PerforceScm(credential, workspace, populate);
 		project.setScm(scm);
 		project.save();
@@ -238,7 +238,7 @@ public class ConnectionTest {
 				.createFreeStyleProject("Static-Change");
 		StaticWorkspaceImpl workspace = new StaticWorkspaceImpl("none", false,
 				"test.ws");
-		Populate populate = new AutoCleanImpl(true, true, false, null);
+		Populate populate = new AutoCleanImpl(true, true, false, false, null);
 		PerforceScm scm = new PerforceScm(credential, workspace, populate);
 		project.setScm(scm);
 		project.save();
@@ -255,7 +255,7 @@ public class ConnectionTest {
 		assertEquals(Result.SUCCESS, build.getResult());
 
 		List<String> log = build.getLog(LOG_LIMIT);
-		assertTrue(log.contains("SCM Task: syncing files at change: 9"));
+		assertTrue(log.contains("P4 Task: syncing files at change: 9"));
 
 		// Check web pages for changes
 		HtmlPage page = jenkins.createWebClient().getPage(build);
@@ -300,7 +300,7 @@ public class ConnectionTest {
 				.createFreeStyleProject("Static-Change");
 		StaticWorkspaceImpl workspace = new StaticWorkspaceImpl("none", false,
 				"test.ws");
-		Populate populate = new AutoCleanImpl(true, true, false, null);
+		Populate populate = new AutoCleanImpl(true, true, false, false, null);
 		PerforceScm scm = new PerforceScm(credential, workspace, null,
 				populate, browser);
 		project.setScm(scm);
@@ -320,7 +320,7 @@ public class ConnectionTest {
 		assertEquals(Result.SUCCESS, build.getResult());
 
 		List<String> log = build.getLog(LOG_LIMIT);
-		assertTrue(log.contains("SCM Task: syncing files at change: 15"));
+		assertTrue(log.contains("P4 Task: syncing files at change: 15"));
 
 		// Check web pages for changes
 		HtmlPage page = jenkins.createWebClient().getPage(build);
@@ -362,7 +362,7 @@ public class ConnectionTest {
 		FreeStyleProject project = jenkins
 				.createFreeStyleProject("Static-Shelf");
 		Workspace workspace = new StaticWorkspaceImpl("none", false, "test.ws");
-		Populate populate = new AutoCleanImpl(true, true, false, null);
+		Populate populate = new AutoCleanImpl(true, true, false, false, null);
 		PerforceScm scm = new PerforceScm(credential, workspace, null,
 				populate, browser);
 		project.setScm(scm);
@@ -382,7 +382,7 @@ public class ConnectionTest {
 		assertEquals(Result.SUCCESS, build.getResult());
 
 		List<String> log = build.getLog(LOG_LIMIT);
-		assertTrue(log.contains("SCM Task: unshelve review: 19"));
+		assertTrue(log.contains("P4 Task: unshelve review: 19"));
 
 		// Check web pages for changes
 		HtmlPage page = jenkins.createWebClient().getPage(build);
@@ -421,7 +421,7 @@ public class ConnectionTest {
 				.createFreeStyleProject("Manual-Head");
 		ManualWorkspaceImpl workspace = new ManualWorkspaceImpl("none", false,
 				client, spec);
-		Populate populate = new AutoCleanImpl(true, true, false, null);
+		Populate populate = new AutoCleanImpl(true, true, false, false, null);
 		PerforceScm scm = new PerforceScm(credential, workspace, populate);
 		project.setScm(scm);
 		project.save();
@@ -480,7 +480,7 @@ public class ConnectionTest {
 				.createFreeStyleProject("Template-Head");
 		TemplateWorkspaceImpl workspace = new TemplateWorkspaceImpl("none",
 				false, client, format);
-		Populate populate = new AutoCleanImpl(true, true, false, null);
+		Populate populate = new AutoCleanImpl(true, true, false, false, null);
 		PerforceScm scm = new PerforceScm(credential, workspace, populate);
 		project.setScm(scm);
 		project.save();
@@ -525,7 +525,7 @@ public class ConnectionTest {
 				.createFreeStyleProject("Stream-Head");
 		StreamWorkspaceImpl workspace = new StreamWorkspaceImpl("none", false,
 				stream, format);
-		Populate populate = new AutoCleanImpl(true, true, false, null);
+		Populate populate = new AutoCleanImpl(true, true, false, false, null);
 		PerforceScm scm = new PerforceScm(credential, workspace, populate);
 		project.setScm(scm);
 		project.save();
@@ -564,7 +564,7 @@ public class ConnectionTest {
 
 		FreeStyleProject project = jenkins.createFreeStyleProject("TPI83");
 		Workspace workspace = new StaticWorkspaceImpl("none", false, "test.ws");
-		Populate populate = new AutoCleanImpl(true, true, false, null);
+		Populate populate = new AutoCleanImpl(true, true, false, false, null);
 		PerforceScm scm = new PerforceScm(credential, workspace, populate);
 		project.setScm(scm);
 		project.save();
@@ -598,7 +598,7 @@ public class ConnectionTest {
 				.createFreeStyleProject("Template-Head");
 		TemplateWorkspaceImpl workspace = new TemplateWorkspaceImpl("none",
 				false, client, format);
-		Populate populate = new AutoCleanImpl(true, true, false, null);
+		Populate populate = new AutoCleanImpl(true, true, false, false, null);
 		PerforceScm scm = new PerforceScm(credential, workspace, populate);
 		project.setScm(scm);
 		project.save();
@@ -615,7 +615,7 @@ public class ConnectionTest {
 		assertEquals(Result.SUCCESS, build.getResult());
 
 		List<String> log = build.getLog(LOG_LIMIT);
-		assertTrue(log.contains("SCM Task: unshelve review: 19"));
+		assertTrue(log.contains("P4 Task: unshelve review: 19"));
 
 		// TPI-95 Second build with template ws
 		build = project.scheduleBuild2(0, cause).get();
@@ -643,7 +643,8 @@ public class ConnectionTest {
 				client, spec);
 
 		// Pin at label auto15
-		Populate populate = new AutoCleanImpl(true, true, false, "auto15");
+		Populate populate = new AutoCleanImpl(true, true, false, false,
+				"auto15");
 		PerforceScm scm = new PerforceScm(credential, workspace, populate);
 		project.setScm(scm);
 		project.save();
@@ -688,7 +689,8 @@ public class ConnectionTest {
 				client, spec);
 
 		// Pin at label auto15
-		Populate populate = new AutoCleanImpl(true, true, false, "auto15");
+		Populate populate = new AutoCleanImpl(true, true, false, false,
+				"auto15");
 		List<Filter> filter = new ArrayList<Filter>();
 		FilterPerChangeImpl inc = new FilterPerChangeImpl(true);
 		filter.add(inc);
@@ -737,7 +739,8 @@ public class ConnectionTest {
 		ManualWorkspaceImpl workspace = new ManualWorkspaceImpl("none", false,
 				client, spec);
 		boolean isModtime = true;
-		Populate populate = new AutoCleanImpl(true, true, isModtime, null);
+		Populate populate = new AutoCleanImpl(true, true, isModtime, false,
+				null);
 		PerforceScm scm = new PerforceScm(credential, workspace, populate);
 		project.setScm(scm);
 		project.save();

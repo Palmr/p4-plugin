@@ -3,13 +3,11 @@ package org.jenkinsci.plugins.p4.workspace;
 import hudson.DescriptorExtensionList;
 import hudson.ExtensionPoint;
 import hudson.model.Describable;
-import hudson.model.Hudson;
 import hudson.slaves.NodeProperty;
 import hudson.slaves.EnvironmentVariablesNodeProperty;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.logging.Logger;
 
 import jenkins.model.Jenkins;
 
@@ -20,8 +18,6 @@ import com.perforce.p4java.server.IOptionsServer;
 
 public abstract class Workspace implements Cloneable, ExtensionPoint,
 		Describable<Workspace> {
-
-	private static Logger logger = Logger.getLogger(Workspace.class.getName());
 
 	private String charset;
 	private boolean pinHost;
@@ -64,12 +60,12 @@ public abstract class Workspace implements Cloneable, ExtensionPoint,
 			throws Exception;
 
 	public WorkspaceDescriptor getDescriptor() {
-		return (WorkspaceDescriptor) Hudson.getInstance().getDescriptor(
+		return (WorkspaceDescriptor) Jenkins.getInstance().getDescriptor(
 				getClass());
 	}
 
 	public static DescriptorExtensionList<Workspace, WorkspaceDescriptor> all() {
-		return Hudson.getInstance()
+		return Jenkins.getInstance()
 				.<Workspace, WorkspaceDescriptor> getDescriptorList(
 						Workspace.class);
 	}

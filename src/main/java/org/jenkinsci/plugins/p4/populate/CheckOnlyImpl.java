@@ -4,17 +4,17 @@ import hudson.Extension;
 
 import org.kohsuke.stapler.DataBoundConstructor;
 
-public class ForceCleanImpl extends Populate {
+public class CheckOnlyImpl extends Populate {
 
 	/**
-	 * Force sync of workspace (optional have update)
-	 *
-	 * @param have
+	 * No sync, check change only
+	 * 
+	 * @param pin
 	 */
 	@DataBoundConstructor
-	public ForceCleanImpl(boolean have, boolean modtime, boolean quiet,
+	public CheckOnlyImpl(boolean have, boolean force, boolean modtime, boolean quiet,
 			String pin) {
-		super(have, true, modtime, quiet, pin);
+		super(false, false, false, quiet, null);
 	}
 
 	@Extension
@@ -22,7 +22,8 @@ public class ForceCleanImpl extends Populate {
 
 		@Override
 		public String getDisplayName() {
-			return "Forced clean and sync";
+			return "Preview check Only";
 		}
 	}
+
 }

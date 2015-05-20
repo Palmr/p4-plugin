@@ -5,11 +5,11 @@
   <parent>
     <groupId>org.jenkins-ci.plugins</groupId>
     <artifactId>plugin</artifactId>
-    <version>1.580.3</version>
+    <version>1.568</version>
   </parent>
 
   <artifactId>p4</artifactId>
-  <version>1.2.2-SNAPSHOT</version>
+  <version>1.2.3-SNAPSHOT</version>
   <packaging>hpi</packaging>
 
   <name>P4 Plugin</name>
@@ -65,7 +65,13 @@
       <artifactId>credentials</artifactId>
       <version>1.22</version>
     </dependency>
-
+    
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>scm-api</artifactId>
+      <version>0.1</version>
+    </dependency>
+    
     <dependency>
       <groupId>com.perforce</groupId>
       <artifactId>p4java</artifactId>

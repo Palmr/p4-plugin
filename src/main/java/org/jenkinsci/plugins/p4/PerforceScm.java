@@ -39,6 +39,7 @@ import net.sf.json.JSONObject;
 
 import org.acegisecurity.Authentication;
 import org.jenkinsci.plugins.p4.browsers.P4Browser;
+import org.jenkinsci.plugins.p4.changes.P4ChangeEntry;
 import org.jenkinsci.plugins.p4.changes.P4ChangeParser;
 import org.jenkinsci.plugins.p4.changes.P4ChangeSet;
 import org.jenkinsci.plugins.p4.client.ClientHelper;
@@ -295,16 +296,16 @@ public class PerforceScm extends SCM {
 				log.println("Building Parent on Node: " + node);
 				success &= buildWorkspace.act(task);
 			} else {
-				listener.getLogger().println("Skipping Parent build... ");
+				listener.getLogger().println("Skipping Parent build...");
 				success = true;
 			}
 		} else {
 			if (job instanceof MatrixProject) {
-				log.println("Building Child on Node: " + node);
 				if (parentChange != null) {
 					log.println("Using parent change: " + parentChange);
 					task.setBuildChange(parentChange);
 				}
+				log.println("Building Child on Node: " + node);
 			} else {
 				log.println("Building on Node: " + node);
 			}
@@ -314,10 +315,10 @@ public class PerforceScm extends SCM {
 		// Only write change log if build succeed.
 		if (success) {
 			// Calculate changes prior to build (based on last build)
-			listener.getLogger().println("Calculating built changes... ");
+			listener.getLogger().println("P4 Task: saving built changes.");
 			List<Object> changes = calculateChanges(run, task);
 			P4ChangeSet.store(changelogFile, changes);
-			listener.getLogger().println("Saved to file... ");
+			listener.getLogger().println("... done\n");
 		} else {
 			String msg = "P4: Build failed";
 			logger.warning(msg);
@@ -347,13 +348,16 @@ public class PerforceScm extends SCM {
 			if (lastTag != null) {
 				Object lastChange = lastTag.getBuildChange();
 				if (lastChange != null) {
-					List<Object> changes = task.getChangesFull(lastChange);
-					for (Object c : changes) {
+					List<P4ChangeEntry> changes;
+					changes = task.getChangesFull(lastChange);
+					for (P4ChangeEntry c : changes) {
 						list.add(c);
 					}
 				}
 			}
-		} else {
+		}
+
+		if (list.isEmpty()) {
 			// No previous build, so add current
 			list.add(task.getBuildChange());
 		}
@@ -377,6 +381,12 @@ public class PerforceScm extends SCM {
 			if (tagAction.getClient() != null) {
 				String client = tagAction.getClient();
 				env.put("P4_CLIENT", client);
+			}
+
+			// Set P4_PORT connection
+			if (tagAction.getPort() != null) {
+				String port = tagAction.getPort();
+				env.put("P4_PORT", port);
 			}
 		}
 	}
@@ -462,7 +472,8 @@ public class PerforceScm extends SCM {
 
 		ClientHelper p4 = new ClientHelper(scmCredential, null, client);
 		try {
-			ForceCleanImpl forceClean = new ForceCleanImpl(false, false, null);
+			ForceCleanImpl forceClean = new ForceCleanImpl(false, false,
+					populate.isQuiet(), null);
 			logger.info("P4: unsyncing client: " + client);
 			p4.syncFiles(0, forceClean);
 		} catch (Exception e) {
