@@ -19,8 +19,11 @@ go.sh
 docs/UserGuide.pdf
 target/
 work/
+vagrant/
 
 *.prefs
+
+.pydevproject
 
 *.iml
 .idea/

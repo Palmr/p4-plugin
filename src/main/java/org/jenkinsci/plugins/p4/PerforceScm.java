@@ -154,8 +154,7 @@ public class PerforceScm extends SCM {
 		Node node = workspaceToNode(buildWorkspace);
 
 		if (job instanceof MatrixProject) {
-			MatrixOptions matrix = getMatrixOptions(job);
-			if (matrix.isBuildParent()) {
+			if (isBuildParent(job)) {
 				// Poll PARENT only
 				EnvVars envVars = job.getEnvironment(node, listener);
 				state = pollWorkspace(envVars, listener, buildWorkspace);
@@ -203,8 +202,8 @@ public class PerforceScm extends SCM {
 		envVars.put("NODE_NAME", envVars.get("NODE_NAME", nodeName));
 
 		Workspace ws = (Workspace) workspace.clone();
-		ws.clear();
-		ws.load(envVars);
+		ws.setExpand(envVars);
+
 		// don't call setRootPath() here, polling is often on the master
 
 		// Set EXPANDED client
@@ -214,8 +213,8 @@ public class PerforceScm extends SCM {
 		// Set EXPANDED pinned label/change
 		String pin = populate.getPin();
 		if (pin != null && !pin.isEmpty()) {
-			pin = ws.expand(pin, false);
-			ws.set(ReviewProp.LABEL.toString(), pin);
+			pin = ws.getExpand().format(pin, false);
+			ws.getExpand().set(ReviewProp.LABEL.toString(), pin);
 		}
 
 		// Create task
@@ -253,8 +252,8 @@ public class PerforceScm extends SCM {
 		envVars.put("NODE_NAME", envVars.get("NODE_NAME", "master"));
 
 		Workspace ws = (Workspace) workspace.clone();
-		ws.clear();
-		ws.load(envVars);
+		ws.setExpand(envVars);
+
 		ws.setRootPath(buildWorkspace.getRemote());
 
 		if (ws.isPinHost()) {
@@ -268,31 +267,30 @@ public class PerforceScm extends SCM {
 		if (changes != null) {
 			if (!changes.isEmpty()) {
 				String label = Integer.toString(changes.get(0));
-				ws.set(ReviewProp.LABEL.toString(), label);
+				ws.getExpand().set(ReviewProp.LABEL.toString(), label);
 			}
 		}
 
 		// Create task
 		CheckoutTask task = new CheckoutTask(populate);
+		task.setListener(listener);
 		task.setCredential(credential);
 		task.setWorkspace(ws);
-		task.setListener(listener);
 		task.initialise();
 
 		// Add tagging action to build, enabling label support.
 		TagAction tag = new TagAction(run);
-		tag.setClient(ws.getFullName());
 		tag.setCredential(credential);
+		tag.setWorkspace(ws);
 		tag.setBuildChange(task.getSyncChange());
 		run.addAction(tag);
 
 		// Invoke build.
-		String node = ws.get("NODE_NAME");
+		String node = ws.getExpand().get("NODE_NAME");
 		Job<?, ?> job = run.getParent();
 		if (run instanceof MatrixBuild) {
-			MatrixOptions matrix = getMatrixOptions(job);
 			parentChange = task.getSyncChange();
-			if (matrix.isBuildParent()) {
+			if (isBuildParent(job)) {
 				log.println("Building Parent on Node: " + node);
 				success &= buildWorkspace.act(task);
 			} else {
@@ -327,17 +325,25 @@ public class PerforceScm extends SCM {
 	}
 
 	// Get Matrix Execution options
-	private MatrixOptions getMatrixOptions(Job<?, ?> job) {
-		MatrixOptions matrix = null;
+	private MatrixExecutionStrategy getMatrixExecutionStrategy(Job<?, ?> job) {
 		if (job instanceof MatrixProject) {
 			MatrixProject matrixProj = (MatrixProject) job;
-			MatrixExecutionStrategy exec = matrixProj.getExecutionStrategy();
-			if (exec instanceof MatrixOptions) {
-				matrix = (MatrixOptions) exec;
-			}
+			return matrixProj.getExecutionStrategy();
 		}
-		return matrix;
+		return null;
 	}
+
+	boolean isBuildParent(Job<?, ?> job) {
+		MatrixExecutionStrategy matrix = getMatrixExecutionStrategy(job);
+		if (matrix instanceof MatrixOptions) {
+			return ((MatrixOptions) matrix).isBuildParent();
+		} else {
+			// if user hasn't configured "Perforce: Matrix Options" execution strategy,
+			// default to false
+			return false;
+		}
+	}
+
 
 	private List<Object> calculateChanges(Run<?, ?> run, CheckoutTask task) {
 		List<Object> list = new ArrayList<Object>();
